@@ -1,6 +1,6 @@
 # Requires: nasm, gcc (with -m32 support), binutils (ld/objcopy), make. Optional: qemu-system-i386
 STAGE2_SECTORS := 16
-KERNEL_SECTORS := 32
+KERNEL_SECTORS := 64
 
 CC      := gcc
 LD      := ld
@@ -34,14 +34,20 @@ $(BUILD)/stage2.bin: $(BUILD)/stage2_entry.o $(BUILD)/stage2.o boot/stage2.ld
 	  echo "stage2: $$size / $$max bytes"
 	truncate -s $$(( $(STAGE2_SECTORS) * 512 )) $@
 
-$(BUILD)/kernel.o: kernel/kernel.c include/boot_info.h | $(BUILD)
+# every kernel/*.c is compiled automatically (add a file, just run make)
+KSRC := $(wildcard kernel/*.c)
+KOBJ := $(patsubst kernel/%.c,$(BUILD)/k_%.o,$(KSRC))
+HDRS := $(wildcard include/*.h)
+
+$(BUILD)/k_%.o: kernel/%.c $(HDRS) | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.bin: $(BUILD)/kernel.o kernel/kernel.ld
-	$(LD) $(LDFLAGS) -T kernel/kernel.ld $< -o $(BUILD)/kernel.elf
+$(BUILD)/kernel.bin: $(KOBJ) kernel/kernel.ld
+	$(LD) $(LDFLAGS) -T kernel/kernel.ld $(KOBJ) -o $(BUILD)/kernel.elf
 	objcopy -O binary $(BUILD)/kernel.elf $@
 	@size=$$(wc -c < $@); max=$$(( $(KERNEL_SECTORS) * 512 )); \
-	  if [ $$size -gt $$max ]; then echo "kernel too big ($$size > $$max)"; exit 1; fi
+	  echo "kernel: $$size / $$max bytes"; \
+	  if [ $$size -gt $$max ]; then echo "kernel too big ($$size > $$max), raise KERNEL_SECTORS"; exit 1; fi
 	truncate -s $$(( $(KERNEL_SECTORS) * 512 )) $@
 
 $(IMG): $(BUILD)/stage1.bin $(BUILD)/stage2.bin $(BUILD)/kernel.bin
