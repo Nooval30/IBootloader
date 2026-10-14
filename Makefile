@@ -6,7 +6,7 @@ CC      := gcc
 LD      := ld
 NASM    := nasm
 CFLAGS  := -m32 -ffreestanding -fno-pic -fno-pie -fno-stack-protector -fno-builtin \
-           -nostdlib -O2 -Wall -Wextra -Iinclude -mno-sse -mno-mmx -Wno-array-bounds
+           -nostdlib -O2 -Wall -Wextra -Iinclude -mno-sse -mno-mmx -mgeneral-regs-only -Wno-array-bounds
 LDFLAGS := -m elf_i386 -nostdlib -z noexecstack --no-warn-rwx-segments
 
 BUILD := build
