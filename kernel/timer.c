@@ -25,3 +25,8 @@ void timer_init(uint32_t hz) {
 
 uint32_t timer_ticks(void) { return ticks; }
 uint32_t timer_hz(void) { return freq; }
+
+void timer_sleep(uint32_t n) {
+    uint32_t start = ticks;
+    while ((uint32_t)(ticks - start) < n) __asm__ volatile("sti; hlt");
+}

@@ -17,3 +17,19 @@ uint32_t katou(const char *s) {
     while (*s >= '0' && *s <= '9') v = v * 10 + (uint32_t)(*s++ - '0');
     return v;
 }
+
+uint32_t katoh(const char *s) {
+    uint32_t v = 0;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+    for (;; s++) {
+        char c = *s; uint32_t d;
+        if (c >= '0' && c <= '9') d = (uint32_t)(c - '0');
+        else if (c >= 'a' && c <= 'f') d = (uint32_t)(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') d = (uint32_t)(c - 'A' + 10);
+        else break;
+        v = v * 16 + d;
+    }
+    return v;
+}
+
+uint32_t kstrlen(const char *s) { uint32_t n = 0; while (s[n]) n++; return n; }

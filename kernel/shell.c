@@ -96,6 +96,61 @@ static void cmd_free(char *a) {
     else kputs("bad id\n");
 }
 
+static void put_byte(uint8_t v) {
+    static const char h[] = "0123456789ABCDEF";
+    kputc(h[v >> 4]); kputc(h[v & 15]);
+}
+
+static void cmd_peek(char *a) {                         /* peek ADDR [N] : hex dump of memory */
+    if (!*a) { kputs("usage: peek ADDR [N]   (ADDR in hex, N <= 256)\n"); return; }
+    uint32_t addr = katoh(a), n = 16;
+    while (*a && *a != ' ') a++;
+    while (*a == ' ') a++;
+    if (*a) n = katou(a);
+    if (n == 0) n = 16;
+    if (n > 256) n = 256;
+    for (uint32_t off = 0; off < n; off += 16) {
+        khex(addr + off, 8); kputs(": ");
+        for (uint32_t i = 0; i < 16; i++) {
+            if (off + i < n) { put_byte(*(volatile uint8_t *)(addr + off + i)); kputc(' '); }
+            else kputs("   ");
+        }
+        for (uint32_t i = 0; i < 16 && off + i < n; i++) {
+            uint8_t c = *(volatile uint8_t *)(addr + off + i);
+            kputc(c >= 32 && c < 127 ? (char)c : '.');
+        }
+        kputc('\n');
+    }
+}
+
+static void cpuid(uint32_t leaf, uint32_t r[4]) {
+    __asm__ volatile("cpuid" : "=a"(r[0]), "=b"(r[1]), "=c"(r[2]), "=d"(r[3]) : "a"(leaf), "c"(0));
+}
+
+static void cmd_cpuid(char *a) {
+    (void)a;
+    uint32_t r[4];
+    char v[13];
+    cpuid(0, r);
+    memcpy(v, &r[1], 4); memcpy(v + 4, &r[3], 4); memcpy(v + 8, &r[2], 4); v[12] = 0;
+    kputs("vendor: "); kputs(v); kputc('\n');
+    cpuid(0x80000000, r);
+    if (r[0] >= 0x80000004) {
+        char name[49];
+        for (uint32_t i = 0; i < 3; i++) { cpuid(0x80000002 + i, r); memcpy(name + i * 16, r, 16); }
+        name[48] = 0;
+        const char *s = name; while (*s == ' ') s++;
+        kputs("brand : "); kputs(s); kputc('\n');
+    }
+}
+
+static void cmd_sleep(char *a) {
+    uint32_t s = katou(a);
+    if (s > 3600) s = 3600;
+    timer_sleep(s * timer_hz());
+    kputs("done\n");
+}
+
 static void cmd_reboot(char *a) {
     (void)a;
     while (inb(0x64) & 0x02) {}
@@ -121,6 +176,9 @@ static const struct cmd cmds[] = {
     { "memtest", "self-test for the allocator",   cmd_memtest},
     { "alloc",   "alloc N: kmalloc N bytes",      cmd_alloc  },
     { "free",    "free ID: kfree allocation #ID", cmd_free   },
+    { "peek",    "peek ADDR [N]: hex dump (hex addr)", cmd_peek },
+    { "cpuid",   "CPU vendor and brand",          cmd_cpuid  },
+    { "sleep",   "sleep N: wait N seconds",       cmd_sleep  },
     { "reboot",  "restart the machine",           cmd_reboot },
     { "halt",    "stop the CPU",                  cmd_halt   },
 };
@@ -154,10 +212,46 @@ static void run(char *c) {
     kset_color(COLOR_RED); kputs("unknown command: "); kputs(c); kputc('\n'); kset_color(COLOR_GRAY);
 }
 
-static void handle_char(char c) {
-    if (c == '\n') { kputc('\n'); line[len] = 0; run(line); len = 0; prompt(); }
-    else if (c == '\b') { if (len > 0) { len--; kputc('\b'); } }
-    else if (len < (int)sizeof(line) - 1) { line[len++] = c; kputc(c); }
+/* ---- history (last 8 lines, up/down arrows) ---- */
+#define HIST_N 8
+static char hist[HIST_N][80];
+static int hist_head, hist_len;          /* next slot to write, number of stored lines */
+static int hist_sel = -1;                /* -1 = typing a new line, k = k steps back */
+static char saved[80];                   /* the line being typed while browsing history */
+
+static const char *hist_get(int back) { return hist[(hist_head - 1 - back + 2 * HIST_N) % HIST_N]; }
+
+static void hist_add(const char *l) {
+    if (!*l) return;
+    if (hist_len && kstreq(hist_get(0), l)) return;      /* skip repeats */
+    memcpy(hist[hist_head], l, kstrlen(l) + 1);
+    hist_head = (hist_head + 1) % HIST_N;
+    if (hist_len < HIST_N) hist_len++;
+}
+
+static void set_line(const char *s) {                    /* replace what is typed on screen */
+    while (len > 0) { len--; kputc('\b'); }
+    while (*s && len < (int)sizeof(line) - 1) { line[len++] = *s; kputc(*s++); }
+}
+
+static void handle_key(int c) {
+    if (c == KEY_UP) {
+        if (hist_sel + 1 < hist_len) {
+            if (hist_sel == -1) { line[len] = 0; memcpy(saved, line, (uint32_t)len + 1); }
+            hist_sel++;
+            set_line(hist_get(hist_sel));
+        }
+    } else if (c == KEY_DOWN) {
+        if (hist_sel >= 0) {
+            hist_sel--;
+            set_line(hist_sel < 0 ? saved : hist_get(hist_sel));
+        }
+    } else if (c == '\n') {
+        kputc('\n'); line[len] = 0;
+        hist_add(line); hist_sel = -1;
+        run(line); len = 0; prompt();
+    } else if (c == '\b') { if (len > 0) { len--; kputc('\b'); } }
+    else if (c < 0x100 && len < (int)sizeof(line) - 1) { line[len++] = (char)c; kputc((char)c); }
 }
 
 void shell_run(void) {
@@ -167,6 +261,6 @@ void shell_run(void) {
         if (keyboard_empty()) { __asm__ volatile("sti; hlt"); continue; }
         int c = keyboard_pop();
         __asm__ volatile("sti");
-        handle_char((char)c);
+        handle_key(c);
     }
 }
