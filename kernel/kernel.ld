@@ -3,7 +3,7 @@ ENTRY(kmain)
 SECTIONS
 {
     . = 0x10000;
-    .header : { LONG(0x4C4E524B) }          /* magic "KRNL", entry follows at +4 */
+    .header : { LONG(0x4C4E524B) LONG(kmain) }   /* magic "KRNL" + entry address at +4 */
     .text   : { *(.text.kmain) *(.text*) }
     .rodata : { *(.rodata*) }
     .data   : { *(.data*) *(.bss*) *(COMMON) }

@@ -13,7 +13,7 @@
 boot_info_t g_boot_info;
 int g_boot_valid;
 
-/* kernel.ld places this section first, right after the 4-byte magic (entry = KERNEL_BASE + 4) */
+/* kernel.ld writes the magic + this entry's address into the header at KERNEL_BASE */
 __attribute__((section(".text.kmain")))
 void kmain(boot_info_t *bi) {
     if (bi && bi->magic == BOOTINFO_MAGIC) { g_boot_info = *bi; g_boot_valid = 1; }

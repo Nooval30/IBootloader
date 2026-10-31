@@ -123,9 +123,10 @@ void stage2_main(void) {
     if (*(volatile uint32_t *)KERNEL_BASE != KERNEL_MAGIC)
         panic("kernel image not found / bad magic");
 
-    puts("Kernel OK, jumping to "); put_hex(KERNEL_BASE + 4, 8); putc('\n');
+    uint32_t entry = *(volatile uint32_t *)(KERNEL_BASE + 4);
+    puts("Kernel OK, jumping to "); put_hex(entry, 8); putc('\n');
 
-    void (*kernel_entry)(boot_info_t *) = (void (*)(boot_info_t *))(KERNEL_BASE + 4);
+    void (*kernel_entry)(boot_info_t *) = (void (*)(boot_info_t *))entry;
     kernel_entry(&info);
     panic("kernel returned");
 }
